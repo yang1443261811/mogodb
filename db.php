@@ -78,51 +78,79 @@ class db
         return $this->insertedCount;
     }
 
+    /**
+     * 设置查询条件
+     *
+     * @param string|array $column
+     * @param string|null $operator
+     * @param string|null $value
+     * @return $this
+     */
     public function where($column = '', $operator = '', $value = '')
     {
-        switch (true) {
-            case is_array($column) :
-                $this->wheres = array_merge($column, $this->wheres);
-                break;
-            case (func_num_args() == 2) :
-                $this->wheres[$column] = $operator;
-                break;
-            case (func_num_args() == 3 && array_key_exists($operator, $this->conversion)) :
-                $this->wheres[$column] = [$this->conversion[$operator] => $value];
-                break;
-            default :
-                exit("无效的参数:$operator");
+        if (is_array($column)) {
+            $this->wheres += $column;
+        } else if (func_num_args() == 2) {
+            $this->wheres[$column] = $operator;
+        } else if (func_num_args() == 3 && array_key_exists($operator, $this->conversion)) {
+            $this->wheres[$column] = [$this->conversion[$operator] => $value];
+        } else {
+            exit("无效的参数:$operator");
         }
 
         return $this;
     }
 
-    public function compileWheres()
+    /**
+     * 处理查询条件
+     *
+     * @return array
+     */
+    protected function compileWheres()
     {
-        if (!count($this->wheres) > 0) {
+        if (!count($this->wheres)) {
             return $this->wheres;
         }
 
-        $wheres = [];
-        foreach ($this->wheres as $k => $where) {
-            if (count($where) == 3) {
-                $wheres[$where['column']] = [$where['operator'] => $where['value']];
-            } else {
-                $wheres[key($where)] = current($where);
-            }
+        $wheres = $this->wheres;
+        $this->wheres = [];
+        if (array_key_exists('_id', $wheres)) {
+            $wheres['_id'] = new MongoDB\BSON\ObjectID($wheres['_id']);
         }
 
         return $wheres;
+
     }
 
+    /**
+     * 更新操作
+     *
+     * @param string $collectionName 文档名
+     * @param array $data 需要更新的数据
+     * @return int|null
+     */
     public function update($collectionName, array $data)
     {
-        $bulk = static::getBulkWriteInstance();
-        $wheres = $this->wheres;
-        $this->wheres = [];
-//print_r($wheres);die;
-        $bulk->update($wheres, ['$set' => $data], ['multi' => true, 'upsert' => false]);
+        $wheres = $this->compileWheres();
+        $options = ['multi' => true, 'upsert' => false];
+        $modifiedCount = $this->performUpdate($collectionName, $wheres, ['$set' => $data], $options);
 
+        return $modifiedCount;
+    }
+
+    /**
+     * 执行更新
+     *
+     * @param string $collectionName 文档名
+     * @param array $filter 过滤条件
+     * @param array $update 更新内容
+     * @param array $option 更新选项
+     * @return int|null
+     */
+    protected function performUpdate($collectionName, array $filter, array $update, array $options = [])
+    {
+        $bulk = static::getBulkWriteInstance();
+        $bulk->update($filter, $update, $options);
         $writeResult = $this->manager->executeBulkWrite($this->databaseName . '.' . $collectionName, $bulk, $this->writeConcern);
 
         /* If the WriteConcern could not be fulfilled */
@@ -131,6 +159,86 @@ class db
         }
 
         return $writeResult->getModifiedCount();
+    }
+
+    /**
+     * 对字段执行自增操作
+     *
+     * @param string $collectionName 文档名称
+     * @param string $column 自增的列 取值默认为1,如果传递了该值 则以传递的值为准
+     * @param int $value 自增的值
+     * @return int|null
+     */
+    public function increment($collectionName, $column, $value = 1)
+    {
+        return $this->incrementOrDecrement($collectionName, $column, $value, 'up');
+    }
+
+    /**
+     * 对字段执行自减操作
+     *
+     * @param string $collectionName 文档名称
+     * @param string $column 自减的列
+     * @param int $value 自减的值, 取值默认为1, 如果传递了该值 则以传递的值为准
+     * @return int|null
+     */
+    public function decrement($collectionName, $column, $value = 1)
+    {
+        return $this->incrementOrDecrement($collectionName, $column, $value, 'down');
+    }
+
+    /**
+     * 根据操作符执行自增或自减
+     *
+     * @param string $collectionName 文档名
+     * @param string $column 增减的列
+     * @param int $value 增减的值
+     * @param string $operator 操作符 取值:up(自增) down(自减)
+     * @return int|null
+     */
+    protected function incrementOrDecrement($collectionName, $column, $value, $operator)
+    {
+        $value = $operator == 'up' ? $value : '-' . $value;
+        $wheres =  $this->compileWheres();
+        $update = ['$inc' => [$column => (int)$value]];
+        $options = ['multi' => true, 'upsert' => false];
+        $modifiedCount = $this->performUpdate($collectionName, $wheres, $update, $options);
+
+        return $modifiedCount;
+    }
+
+    /**
+     * 向数组字段中追加一项
+     *
+     * @param string $collectionName 文档名
+     * @param string $column 目标数组字段
+     * @param string|int|array $value 追加的内容
+     * @return int|null
+     */
+    public function push($collectionName, $column, $value)
+    {
+        $wheres =  $this->compileWheres();
+        $options = ['multi' => true, 'multiple' => 1];
+        $modifiedCount = $this->performUpdate($collectionName, $wheres, ['$addToSet' => [$column => $value]], $options);
+
+        return $modifiedCount;
+    }
+
+    /**
+     * 从数组字段中删除一项
+     *
+     * @param string $collectionName 文档名
+     * @param string $column 目标数组字段
+     * @param string|int|array $value 要删除的值
+     * @return int|null
+     */
+    public function pull($collectionName, $column, $value)
+    {
+        $wheres =  $this->compileWheres();
+        $options = ['multi' => true, 'multiple' => 1];
+        $modifiedCount = $this->performUpdate($collectionName, $wheres, ['$pull' => [$column => $value]], $options);
+
+        return $modifiedCount;
     }
 
     /**
