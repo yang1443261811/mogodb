@@ -41,6 +41,13 @@ class db
     protected $columns = array();
 
     /**
+     * 按字段对结果就排序
+     *
+     * @var
+     */
+    protected $orderBy;
+
+    /**
      * Operator conversion.
      *
      * @var array
@@ -216,13 +223,7 @@ class db
         $batch = (is_array($value) and array_keys($value) === range(0, count($value) - 1));
         // If we are pulling multiple values, we need to use $pullAll.
         $operator = $batch ? '$pullAll' : '$pull';
-
-        if (is_array($column)) {
-            $query = [$operator => $column];
-        } else {
-            $query = [$operator => [$column => $value]];
-        }
-
+        $query = is_array($column) ? [$operator => $column] : [$operator => [$column => $value]];
         $wheres = $this->compileWheres();
         $options = ['multi' => true, 'multiple' => 1];
         $modifiedCount = $this->performUpdate($collectionName, $wheres, $query, $options);
@@ -233,8 +234,8 @@ class db
     /**
      * 通过文档ID查询文件记录
      *
-     * @param $collectionName
-     * @param $id
+     * @param string $collectionName 文档名
+     * @param string|array $id 支持多个id查询
      * @param array $columns 需要查询的字段
      * @return array|\MongoDB\Driver\Cursor
      */
@@ -256,23 +257,28 @@ class db
         return $this->performQuery($collectionName, $filter, $options);
     }
 
-    public function whereIn($column, array $values)
+    public function get($collectionName, array $columns = [])
     {
-        if ($column == 'id') {
-            $values[] = array_map(function ($value) {
-                return new MongoDB\BSON\ObjectID($value);
-            }, $values);
+        $options = array();
+        $filter = $this->compileWheres();
+        $columns = $columns ?: $this->columns;
+        if (count($columns) > 1) {
+            $options['projection'] = $this->compileColumns($columns);
         }
 
-        $this->wheres[$column]['$in'] = $values;
+        if (!is_null($this->orderBy)) {
+            $options['sort'] = $this->orderBy;
+        }
 
-        return $this;
+        return $this->performQuery($collectionName, $filter, $options);
     }
 
     /**
-     * @param $collectionName
-     * @param array $filter
-     * @param array $options
+     * 执行查询语句
+     *
+     * @param string $collectionName 文档名
+     * @param array $filter 过滤条件
+     * @param array $options 查询选项
      * @return array|\MongoDB\Driver\Cursor
      */
     public function performQuery($collectionName, array $filter, array $options)
@@ -309,6 +315,26 @@ class db
     }
 
     /**
+     * 查询符合条件的多个值
+     *
+     * @param string $column
+     * @param array $values
+     * @return $this
+     */
+    public function whereIn($column, array $values)
+    {
+        if ($column == 'id') {
+            $values[] = array_map(function ($value) {
+                return new MongoDB\BSON\ObjectID($value);
+            }, $values);
+        }
+
+        $this->wheres[$column]['$in'] = $values;
+
+        return $this;
+    }
+
+    /**
      * 指定需要查询的字段
      *
      * @param array|string $columns
@@ -318,6 +344,16 @@ class db
     {
         if ($columns) {
             $this->columns = is_array($columns) ? $columns : explode(',', $columns);
+        }
+
+        return $this;
+    }
+
+    public function sort($column, $direction = 'asc')
+    {
+        $directions = ['asc' => 1, 'desc' => -1];
+        if (array_key_exists($direction, $directions)) {
+            $this->orderBy[$column] = $directions[$direction];
         }
 
         return $this;
