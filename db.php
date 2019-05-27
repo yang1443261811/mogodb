@@ -213,13 +213,28 @@ class db
      * @param string $collectionName 文档名
      * @param string $column 目标数组字段
      * @param string|int|array $value 追加的内容
+     * @param boolean $unique 追加时是否保持数组内的值不重复
      * @return int|null
      */
-    public function push($collectionName, $column, $value)
+    public function push($collectionName, $column, $value = null, $unique = false)
     {
         $wheres =  $this->compileWheres();
+        // Use the addToSet operator in case we only want unique items.
+        $operator = $unique ? '$addToSet' : '$push';
+
+        // Check if we are pushing multiple values.
+        $batch = (is_array($value) and array_keys($value) === range(0, count($value) - 1));
+
+        if (is_array($column)) {
+            $query = [$operator => $column];
+        } elseif ($batch) {
+            $query = [$operator => [$column => ['$each' => $value]]];
+        } else {
+            $query = [$operator => [$column => $value]];
+        }
+
         $options = ['multi' => true, 'multiple' => 1];
-        $modifiedCount = $this->performUpdate($collectionName, $wheres, ['$addToSet' => [$column => $value]], $options);
+        $modifiedCount = $this->performUpdate($collectionName, $wheres, $query, $options);
 
         return $modifiedCount;
     }
@@ -232,11 +247,22 @@ class db
      * @param string|int|array $value 要删除的值
      * @return int|null
      */
-    public function pull($collectionName, $column, $value)
+    public function pull($collectionName, $column, $value = null)
     {
+        // Check if we passed an associative array.
+        $batch = (is_array($value) and array_keys($value) === range(0, count($value) - 1));
+        // If we are pulling multiple values, we need to use $pullAll.
+        $operator = $batch ? '$pullAll' : '$pull';
+
+        if (is_array($column)) {
+            $query = [$operator => $column];
+        } else {
+            $query = [$operator => [$column => $value]];
+        }
+
         $wheres =  $this->compileWheres();
         $options = ['multi' => true, 'multiple' => 1];
-        $modifiedCount = $this->performUpdate($collectionName, $wheres, ['$pull' => [$column => $value]], $options);
+        $modifiedCount = $this->performUpdate($collectionName, $wheres, $query, $options);
 
         return $modifiedCount;
     }
