@@ -34,6 +34,13 @@ class db
     protected $wheres = array();
 
     /**
+     * 需要查询的字段
+     *
+     * @var array
+     */
+    protected $columns = array();
+
+    /**
      * Operator conversion.
      *
      * @var array
@@ -79,50 +86,6 @@ class db
     }
 
     /**
-     * 设置查询条件
-     *
-     * @param string|array $column
-     * @param string|null $operator
-     * @param string|null $value
-     * @return $this
-     */
-    public function where($column = '', $operator = '', $value = '')
-    {
-        if (is_array($column)) {
-            $this->wheres += $column;
-        } else if (func_num_args() == 2) {
-            $this->wheres[$column] = $operator;
-        } else if (func_num_args() == 3 && array_key_exists($operator, $this->conversion)) {
-            $this->wheres[$column] = [$this->conversion[$operator] => $value];
-        } else {
-            exit("无效的参数:$operator");
-        }
-
-        return $this;
-    }
-
-    /**
-     * 处理查询条件
-     *
-     * @return array
-     */
-    protected function compileWheres()
-    {
-        if (!count($this->wheres)) {
-            return $this->wheres;
-        }
-
-        $wheres = $this->wheres;
-        $this->wheres = [];
-        if (array_key_exists('_id', $wheres)) {
-            $wheres['_id'] = new MongoDB\BSON\ObjectID($wheres['_id']);
-        }
-
-        return $wheres;
-
-    }
-
-    /**
      * 更新操作
      *
      * @param string $collectionName 文档名
@@ -144,7 +107,7 @@ class db
      * @param string $collectionName 文档名
      * @param array $filter 过滤条件
      * @param array $update 更新内容
-     * @param array $option 更新选项
+     * @param array $options 更新选项
      * @return int|null
      */
     protected function performUpdate($collectionName, array $filter, array $update, array $options = [])
@@ -199,7 +162,7 @@ class db
     protected function incrementOrDecrement($collectionName, $column, $value, $operator)
     {
         $value = $operator == 'up' ? $value : '-' . $value;
-        $wheres =  $this->compileWheres();
+        $wheres = $this->compileWheres();
         $update = ['$inc' => [$column => (int)$value]];
         $options = ['multi' => true, 'upsert' => false];
         $modifiedCount = $this->performUpdate($collectionName, $wheres, $update, $options);
@@ -218,7 +181,7 @@ class db
      */
     public function push($collectionName, $column, $value = null, $unique = false)
     {
-        $wheres =  $this->compileWheres();
+        $wheres = $this->compileWheres();
         // Use the addToSet operator in case we only want unique items.
         $operator = $unique ? '$addToSet' : '$push';
 
@@ -260,11 +223,141 @@ class db
             $query = [$operator => [$column => $value]];
         }
 
-        $wheres =  $this->compileWheres();
+        $wheres = $this->compileWheres();
         $options = ['multi' => true, 'multiple' => 1];
         $modifiedCount = $this->performUpdate($collectionName, $wheres, $query, $options);
 
         return $modifiedCount;
+    }
+
+    /**
+     * 通过文档ID查询文件记录
+     *
+     * @param $collectionName
+     * @param $id
+     * @param array $columns 需要查询的字段
+     * @return array|\MongoDB\Driver\Cursor
+     */
+    public function find($collectionName, $id, array $columns = [])
+    {
+        //如果id是多个就按多个id查询,类似于SQL中 where in条件语句
+        if (is_array($id)) {
+            $filter['_id']['$in'] = array_map(function ($value) {
+                return new MongoDB\BSON\ObjectID($value);
+            }, $id);
+        } else {
+            $filter['_id'] = new MongoDB\BSON\ObjectID($id);
+        }
+
+        //查询的字段,如果没有指定就查询所有字段
+        $projection = $this->compileColumns($columns);
+        $options = $projection ? compact('projection') : [];
+
+        return $this->performQuery($collectionName, $filter, $options);
+    }
+
+    public function whereIn($column, array $values)
+    {
+        if ($column == 'id') {
+            $values[] = array_map(function ($value) {
+                return new MongoDB\BSON\ObjectID($value);
+            }, $values);
+        }
+
+        $this->wheres[$column]['$in'] = $values;
+
+        return $this;
+    }
+
+    /**
+     * @param $collectionName
+     * @param array $filter
+     * @param array $options
+     * @return array|\MongoDB\Driver\Cursor
+     */
+    public function performQuery($collectionName, array $filter, array $options)
+    {
+        //构建查询语句
+        $query = new MongoDB\Driver\Query($filter, $options);
+        //执行查询
+        $cursor = $this->manager->executeQuery($this->databaseName . '.' . $collectionName, $query, $this->readPreference);
+        //将查询迭代器转化为数组
+        return iterator_to_array($cursor);
+    }
+
+    /**
+     * 设置查询条件
+     *
+     * @param string|array $column
+     * @param string|null $operator
+     * @param string|null $value
+     * @return $this
+     */
+    public function where($column = '', $operator = '', $value = '')
+    {
+        if (is_array($column)) {
+            $this->wheres += $column;
+        } else if (func_num_args() == 2) {
+            $this->wheres[$column] = $operator;
+        } else if (func_num_args() == 3 && array_key_exists($operator, $this->conversion)) {
+            $this->wheres[$column] = [$this->conversion[$operator] => $value];
+        } else {
+            exit("无效的参数:$operator");
+        }
+
+        return $this;
+    }
+
+    /**
+     * 指定需要查询的字段
+     *
+     * @param array|string $columns
+     * @return $this
+     */
+    public function select($columns)
+    {
+        if ($columns) {
+            $this->columns = is_array($columns) ? $columns : explode(',', $columns);
+        }
+
+        return $this;
+    }
+
+    /**
+     * 处理查询条件
+     *
+     * @return array
+     */
+    protected function compileWheres()
+    {
+        if (!count($this->wheres)) {
+            return $this->wheres;
+        }
+
+        $wheres = $this->wheres;
+        $this->wheres = [];
+        if (array_key_exists('_id', $wheres)) {
+            $wheres['_id'] = new MongoDB\BSON\ObjectID($wheres['_id']);
+        }
+
+        return $wheres;
+
+    }
+
+    /**
+     * 将查询字段组成一个关联数组,以字段名称为键 以1为值:[filed => 1]
+     *
+     * @param array $columns
+     * @return array|null
+     */
+    public function compileColumns(array $columns)
+    {
+        $columns = $columns ?: $this->columns;
+        $this->columns = [];
+
+        return (count($columns) > 1)
+            ? array_combine($columns, array_fill(0, count($columns), 1))
+            : null;
     }
 
     /**
