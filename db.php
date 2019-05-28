@@ -45,7 +45,7 @@ class db
      *
      * @var
      */
-    protected $orderBy;
+    protected $orderBy = array();
 
     /**
      * 查询的数量
@@ -290,7 +290,7 @@ class db
             $options['skip'] = $this->offset;
         }
 
-        if($this->limit) {
+        if ($this->limit) {
             $options['limit'] = $this->limit;
         }
 
@@ -331,8 +331,6 @@ class db
             $this->wheres[$column] = $operator;
         } else if (func_num_args() == 3 && array_key_exists($operator, $this->conversion)) {
             $this->wheres[$column] = [$this->conversion[$operator] => $value];
-        } else {
-            exit("无效的参数:$operator");
         }
 
         return $this;
@@ -354,6 +352,28 @@ class db
         }
 
         $this->wheres[$column]['$in'] = $values;
+
+        return $this;
+    }
+
+    public function orWhere($column, $operator = null, $value = null)
+    {
+        if (is_array($column)) {
+            array_key_exists('id', $column) and $column['id'] = new MongoDB\BSON\ObjectID($column['id']);
+            $this->wheres['$or'][] = $column;
+        } else if (func_num_args() == 2) {
+            $column == 'id' and $value = new MongoDB\BSON\ObjectID($value);
+            $this->wheres['$or'][] = [$column => $operator];
+        } else if (func_num_args() == 3 && array_key_exists($operator, $this->conversion)) {
+            $this->wheres['$or'][] = [$column => [$this->conversion[$operator] => $value]];
+        }
+
+        return $this;
+    }
+
+    public function likeWhere($column, $regex)
+    {
+        $this->wheres[$column] = new MongoDB\BSON\Regex($regex, 'i');
 
         return $this;
     }
@@ -398,9 +418,7 @@ class db
      */
     public function limit($value)
     {
-        if (is_numeric($value)) {
-            $this->limit = $value;
-        }
+        is_numeric($value) and $this->limit = $value;
 
         return $this;
     }
@@ -413,9 +431,7 @@ class db
      */
     public function offset($value)
     {
-        if (is_numeric($value)) {
-            $this->offset = $value;
-        }
+        is_numeric($value) and $this->offset = $value;
 
         return $this;
     }
@@ -438,7 +454,6 @@ class db
         }
 
         return $wheres;
-
     }
 
     /**
@@ -452,7 +467,7 @@ class db
         $columns = $columns ?: $this->columns;
         $this->columns = [];
 
-        return (count($columns) > 1)
+        return count($columns)
             ? array_combine($columns, array_fill(0, count($columns), 1))
             : null;
     }

@@ -32,7 +32,8 @@ $db = new db();
 //$res = $db->example->where('_id', '5ce78731f53abf2a48000512')->where('introduction.height', 178)->increment('customers', 'introduction.$.overwork', 15);
 //按id进行查询
 //$cursor = $db->example->select('name,address,salary')->find('customers', ['5ce78731f53abf2a48000512', '5ce641acf53abf0ed00014f4']);
-$cursor = $db->example->offset(3)->limit(5)->orderBy('salary', 'desc')->get('customers');
+//模糊搜索
+//$cursor = $db->example->likeWhere('name', '/*yang/*')->orderBy('salary', 'desc')->get('customers');
 
 
 p($cursor);
