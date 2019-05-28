@@ -30,7 +30,10 @@ $db = new db();
 //$res = $db->example->where('_id', '5ce78731f53abf2a48000512')->pull('customers', 'introduction', ['overwork' => 12]);
 //对满足条件的嵌套里的某个字段进行自增效果
 //$res = $db->example->where('_id', '5ce78731f53abf2a48000512')->where('introduction.height', 178)->increment('customers', 'introduction.$.overwork', 15);
-$cursor = $db->example->select('name,address,salary')->find('customers', ['5ce78731f53abf2a48000512', '5ce641acf53abf0ed00014f4']);
+//按id进行查询
+//$cursor = $db->example->select('name,address,salary')->find('customers', ['5ce78731f53abf2a48000512', '5ce641acf53abf0ed00014f4']);
+$cursor = $db->example->offset(3)->limit(5)->orderBy('salary', 'desc')->get('customers');
+
 
 p($cursor);
 function p($data)

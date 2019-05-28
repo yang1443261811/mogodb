@@ -41,11 +41,25 @@ class db
     protected $columns = array();
 
     /**
-     * 按字段对结果就排序
+     * 按字段对结果排序
      *
      * @var
      */
     protected $orderBy;
+
+    /**
+     * 查询的数量
+     *
+     * @var
+     */
+    protected $limit;
+
+    /**
+     * 从第几条记录开始查询
+     *
+     * @var
+     */
+    protected $offset;
 
     /**
      * Operator conversion.
@@ -260,14 +274,24 @@ class db
     public function get($collectionName, array $columns = [])
     {
         $options = array();
+
         $filter = $this->compileWheres();
-        $columns = $columns ?: $this->columns;
-        if (count($columns) > 1) {
-            $options['projection'] = $this->compileColumns($columns);
+
+        $projection = $this->compileColumns($columns);
+        if ($projection) {
+            $options['projection'] = $projection;
         }
 
         if (!is_null($this->orderBy)) {
             $options['sort'] = $this->orderBy;
+        }
+
+        if ($this->offset) {
+            $options['skip'] = $this->offset;
+        }
+
+        if($this->limit) {
+            $options['limit'] = $this->limit;
         }
 
         return $this->performQuery($collectionName, $filter, $options);
@@ -349,11 +373,48 @@ class db
         return $this;
     }
 
-    public function sort($column, $direction = 'asc')
+    /**
+     * 对结果进行排序
+     *
+     * @param string $column 排序的字段
+     * @param string $direction 排序的方式 正序或倒叙
+     * @return $this
+     */
+    public function orderBy($column, $direction = 'asc')
     {
         $directions = ['asc' => 1, 'desc' => -1];
         if (array_key_exists($direction, $directions)) {
             $this->orderBy[$column] = $directions[$direction];
+        }
+
+        return $this;
+    }
+
+    /**
+     * 查询行数限制
+     *
+     * @param int $value 获取记录的条数
+     * @return $this
+     */
+    public function limit($value)
+    {
+        if (is_numeric($value)) {
+            $this->limit = $value;
+        }
+
+        return $this;
+    }
+
+    /**
+     * 查询行数偏移量
+     *
+     * @param int $value
+     * @return $this
+     */
+    public function offset($value)
+    {
+        if (is_numeric($value)) {
+            $this->offset = $value;
         }
 
         return $this;
