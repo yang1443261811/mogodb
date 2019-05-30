@@ -34,6 +34,9 @@ $db = new db();
 //$cursor = $db->example->select('name,address,salary')->find('customers', ['5ce78731f53abf2a48000512', '5ce641acf53abf0ed00014f4']);
 //模糊搜索
 //$cursor = $db->example->likeWhere('name', '/*yang/*')->orderBy('salary', 'desc')->get('customers');
+//$cursor = $db->example->where('salary', '>', 7000)->count('customers');
+//$cursor = $db->example->where('salary', '>', 7000)->aggregate('customers');
+$cursor = $db->example->first('customers', 'name');
 
 
 p($cursor);

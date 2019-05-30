@@ -297,6 +297,99 @@ class db
         return $this->performQuery($collectionName, $filter, $options);
     }
 
+    public function aggregate($collectionName, $columns = [])
+    {
+        $pipeline[] = ['$match' => $this->compileWheres()];
+//        $pipeline[] = ['$project' => $this->compileColumns($columns)];
+        $pipeline[] = ['$group' => ['_id' => 'null', 'salary' => ['$sum' => '$salary']]];
+        $command = [
+            'aggregate' => $collectionName,
+            'pipeline' => $pipeline,
+            'cursor' => new stdClass,
+        ];
+        $command = new MongoDB\Driver\Command($command);
+        $cursor = $this->manager->executeCommand($this->databaseName, $command);
+        //将查询迭代器转化为数组
+        return iterator_to_array($cursor);
+    }
+
+    public function count($collectionName)
+    {
+        //查询记录总的数量
+        $commands = [
+            'count' => $collectionName,
+            'query' => $this->compileWheres()
+        ];
+        $command = new \MongoDB\Driver\Command($commands);
+        $cursor = $this->manager->executeCommand($this->databaseName, $command);
+        $info = $cursor->toArray();
+        $count = $info[0]->n;
+
+        return $count;
+    }
+
+    public function sum($collectionName, $column)
+    {
+        $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$sum' => '$' . $column]]];
+
+        $data = $this->executeAggregate($collectionName, $pipeline);
+
+        return $data[0]->$column;
+    }
+
+    public function min($collectionName, $column)
+    {
+        $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$min' => '$' . $column]]];
+
+        $data = $this->executeAggregate($collectionName, $pipeline);
+
+        return $data[0]->$column;
+    }
+
+    public function max($collectionName, $column)
+    {
+        $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$max' => '$' . $column]]];
+
+        $data = $this->executeAggregate($collectionName, $pipeline);
+
+        return $data[0]->$column;
+    }
+
+    public function avg($collectionName, $column)
+    {
+        $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$avg' => '$' . $column]]];
+
+        $data = $this->executeAggregate($collectionName, $pipeline);
+
+        return $data[0]->$column;
+    }
+
+    public function first($collectionName, $column)
+    {
+        $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$first' => '$' . $column]]];
+
+        $data = $this->executeAggregate($collectionName, $pipeline);
+
+        return $data;
+
+    }
+
+    public function executeAggregate($collectionName, $pipeline)
+    {
+        $wheres = $this->compileWheres();
+        $wheres and $pipeline[] = ['$match' => $wheres];
+
+        $command = [
+            'aggregate' => $collectionName,
+            'pipeline' => $pipeline,
+            'cursor' => new stdClass,
+        ];
+        $command = new MongoDB\Driver\Command($command);
+        $cursor = $this->manager->executeCommand($this->databaseName, $command);
+        //将查询迭代器转化为数组
+        return iterator_to_array($cursor);
+    }
+
     /**
      * 执行查询语句
      *
