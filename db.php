@@ -48,6 +48,13 @@ class db
     protected $orderBy = array();
 
     /**
+     * 分组字段
+     *
+     * @var
+     */
+    protected $groupBy = array();
+
+    /**
      * 查询的数量
      *
      * @var
@@ -274,34 +281,39 @@ class db
     public function get($collectionName, array $columns = [])
     {
         $options = array();
-
         $filter = $this->compileWheres();
 
         $projection = $this->compileColumns($columns);
-        if ($projection) {
-            $options['projection'] = $projection;
-        }
-
-        if (!is_null($this->orderBy)) {
-            $options['sort'] = $this->orderBy;
-        }
-
-        if ($this->offset) {
-            $options['skip'] = $this->offset;
-        }
-
-        if ($this->limit) {
-            $options['limit'] = $this->limit;
-        }
+        $options['projection'] = $projection;
+        $options['sort'] = $this->orderBy;
+        $options['skip'] = $this->offset;
+        $options['limit'] = $this->limit;
+        $options = array_filter($options);
 
         return $this->performQuery($collectionName, $filter, $options);
     }
 
     public function aggregate($collectionName, $columns = [])
     {
-        $pipeline[] = ['$match' => $this->compileWheres()];
-//        $pipeline[] = ['$project' => $this->compileColumns($columns)];
-        $pipeline[] = ['$group' => ['_id' => 'null', 'salary' => ['$sum' => '$salary']]];
+        $pipeline = [];
+        if ($this->wheres) {
+            $pipeline[] = ['$match' => $this->compileWheres()];
+        }
+
+        $columns = $columns ?: $this->columns;
+        $group = [];
+        if ($columns) {
+            foreach ($columns as $column) {
+                $group[$column] = ['$last' => '$' . $column];
+           }
+        }
+
+        if ($this->groupBy) {
+            $group += ['_id' => $this->groupBy];
+        }
+
+        $pipeline[] = ['$group' => $group];
+//        print_r($pipeline);die;
         $command = [
             'aggregate' => $collectionName,
             'pipeline' => $pipeline,
@@ -366,7 +378,7 @@ class db
 
     public function first($collectionName, $column)
     {
-        $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$first' => '$' . $column]]];
+        $pipeline[] = ['$group' => ['_id' => ['$exists' => true], $column => ['$first' => '$' . $column]]];
 
         $data = $this->executeAggregate($collectionName, $pipeline);
 
@@ -503,6 +515,15 @@ class db
         return $this;
     }
 
+    public function groupBy($column)
+    {
+        if ($column) {
+            $this->groupBy[$column] = '$' . $column;
+        }
+
+        return $this;
+    }
+
     /**
      * 查询行数限制
      *
@@ -559,6 +580,14 @@ class db
     {
         $columns = $columns ?: $this->columns;
         $this->columns = [];
+//        if ($this->groupBy) {
+//            $fields = [];
+//            foreach ($columns as $column) {
+//                $fields[$column] = '$' . $column;
+//            }
+//
+//            return $fields;
+//        }
 
         return count($columns)
             ? array_combine($columns, array_fill(0, count($columns), 1))

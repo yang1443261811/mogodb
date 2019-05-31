@@ -36,7 +36,8 @@ $db = new db();
 //$cursor = $db->example->likeWhere('name', '/*yang/*')->orderBy('salary', 'desc')->get('customers');
 //$cursor = $db->example->where('salary', '>', 7000)->count('customers');
 //$cursor = $db->example->where('salary', '>', 7000)->aggregate('customers');
-$cursor = $db->example->first('customers', 'name');
+//$cursor = $db->example->count('customers');
+$cursor = $db->example->groupBy('name')->aggregate('customers', ['salary', 'address', 'age']);
 
 
 p($cursor);
