@@ -278,6 +278,13 @@ class db
         return $this->performQuery($collectionName, $filter, $options);
     }
 
+    /**
+     * 查询文档
+     *
+     * @param string $collectionName 文档名
+     * @param array $columns
+     * @return array|\MongoDB\Driver\Cursor
+     */
     public function get($collectionName, array $columns = [])
     {
         $options = array();
@@ -293,23 +300,30 @@ class db
         return $this->performQuery($collectionName, $filter, $options);
     }
 
+    /**
+     * 聚合查询
+     *
+     * @param string $collectionName 文档名称
+     * @param array $columns
+     * @return array|\MongoDB\Driver\Cursor
+     */
     public function aggregate($collectionName, $columns = [])
     {
+        $group = [];
         $pipeline = [];
         if ($this->wheres) {
             $pipeline[] = ['$match' => $this->compileWheres()];
         }
 
         $columns = $columns ?: $this->columns;
-        $group = [];
         if ($columns) {
             foreach ($columns as $column) {
                 $group[$column] = ['$last' => '$' . $column];
-           }
+            }
         }
 
         if ($this->groupBy) {
-            $group += ['_id' => $this->groupBy];
+            $group += ['_id' => $this->groupBy, 'avg' => ['$sum' => '$salary']];
         }
 
         $pipeline[] = ['$group' => $group];
@@ -325,6 +339,12 @@ class db
         return iterator_to_array($cursor);
     }
 
+    /**
+     * 获取记录的数量
+     *
+     * @param string $collectionName 文档名
+     * @return mixed
+     */
     public function count($collectionName)
     {
         //查询记录总的数量
@@ -340,6 +360,13 @@ class db
         return $count;
     }
 
+    /**
+     * 获取某个字段的和
+     *
+     * @param string $collectionName 文档名
+     * @param string $column 字段名
+     * @return mixed
+     */
     public function sum($collectionName, $column)
     {
         $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$sum' => '$' . $column]]];
@@ -349,6 +376,13 @@ class db
         return $data[0]->$column;
     }
 
+    /**
+     * 获取记录中某个字段的最小值
+     *
+     * @param string $collectionName 文档名
+     * @param string $column 字段名
+     * @return mixed
+     */
     public function min($collectionName, $column)
     {
         $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$min' => '$' . $column]]];
@@ -358,6 +392,13 @@ class db
         return $data[0]->$column;
     }
 
+    /**
+     * 获取记录中某个字段的最大值
+     *
+     * @param string $collectionName 文档名
+     * @param string $column 字段名
+     * @return mixed
+     */
     public function max($collectionName, $column)
     {
         $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$max' => '$' . $column]]];
@@ -367,6 +408,13 @@ class db
         return $data[0]->$column;
     }
 
+    /**
+     * 获取记录中某个字段的平均值
+     *
+     * @param string $collectionName 文档名
+     * @param string $column 字段名称
+     * @return mixed
+     */
     public function avg($collectionName, $column)
     {
         $pipeline[] = ['$group' => ['_id' => 'null', $column => ['$avg' => '$' . $column]]];
@@ -376,17 +424,14 @@ class db
         return $data[0]->$column;
     }
 
-    public function first($collectionName, $column)
-    {
-        $pipeline[] = ['$group' => ['_id' => ['$exists' => true], $column => ['$first' => '$' . $column]]];
-
-        $data = $this->executeAggregate($collectionName, $pipeline);
-
-        return $data;
-
-    }
-
-    public function executeAggregate($collectionName, $pipeline)
+    /**
+     * 执行聚合查询
+     *
+     * @param string $collectionName 文档名称
+     * @param array $pipeline 管道
+     * @return array|\MongoDB\Driver\Cursor
+     */
+    public function executeAggregate($collectionName, array $pipeline)
     {
         $wheres = $this->compileWheres();
         $wheres and $pipeline[] = ['$match' => $wheres];
@@ -461,12 +506,22 @@ class db
         return $this;
     }
 
+    /**
+     * 设置or查询条件
+     *
+     * @param string|array $column
+     * @param null|string $operator
+     * @param null|string $value
+     * @return $this
+     */
     public function orWhere($column, $operator = null, $value = null)
     {
         if (is_array($column)) {
+            //如果字段是id则对值进行转换
             array_key_exists('id', $column) and $column['id'] = new MongoDB\BSON\ObjectID($column['id']);
             $this->wheres['$or'][] = $column;
         } else if (func_num_args() == 2) {
+            //如果字段是id则对值进行转换
             $column == 'id' and $value = new MongoDB\BSON\ObjectID($value);
             $this->wheres['$or'][] = [$column => $operator];
         } else if (func_num_args() == 3 && array_key_exists($operator, $this->conversion)) {
@@ -476,6 +531,13 @@ class db
         return $this;
     }
 
+    /**
+     * 设置模糊查询
+     *
+     * @param string $column 查询的字段
+     * @param string $regex 正则表达式
+     * @return $this
+     */
     public function likeWhere($column, $regex)
     {
         $this->wheres[$column] = new MongoDB\BSON\Regex($regex, 'i');
@@ -515,6 +577,12 @@ class db
         return $this;
     }
 
+    /**
+     * 设置分组
+     *
+     * @param string $column 分组的字段
+     * @return $this
+     */
     public function groupBy($column)
     {
         if ($column) {
@@ -580,14 +648,6 @@ class db
     {
         $columns = $columns ?: $this->columns;
         $this->columns = [];
-//        if ($this->groupBy) {
-//            $fields = [];
-//            foreach ($columns as $column) {
-//                $fields[$column] = '$' . $column;
-//            }
-//
-//            return $fields;
-//        }
 
         return count($columns)
             ? array_combine($columns, array_fill(0, count($columns), 1))
