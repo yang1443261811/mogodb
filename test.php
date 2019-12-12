@@ -37,10 +37,13 @@ $db = new db();
 //$cursor = $db->example->where('salary', '>', 7000)->count('customers');
 //$cursor = $db->example->where('salary', '>', 7000)->aggregate('customers');
 //$cursor = $db->example->count('customers');
-$cursor = $db->example->groupBy('name')->aggregate('customers', ['salary', 'address', 'age']);
+//$cursor = $db->example->groupBy('name')->aggregate('customers', ['salary', 'address', 'age']);
+$cursor = $db->example->find('customers', '5ce78731f53abf2a48000512');
 
-
-p($cursor);
+$obj = $cursor[0]->_id;
+echo $obj;
+print_r((string)$obj);
+//p();
 function p($data)
 {
     echo '<pre>';

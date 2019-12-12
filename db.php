@@ -339,6 +339,11 @@ class db
         return iterator_to_array($cursor);
     }
 
+    public function explain($collectionName)
+    {
+
+    }
+
     /**
      * 获取记录的数量
      *
